@@ -1,0 +1,182 @@
+#include "mbed.h"
+#include "math.h"
+
+#define ADRESA_SENZOR 0x0D
+#define GRANICA 10000
+
+I2C PPM(PF_0,PF_1); //Prvo parking mjesto
+I2C DPM(PB_9,PB_8); //Drugo parking mjesto
+Serial pc(USBTX,USBRX);
+DigitalOut PrvoZauzeto(PA_3); //PRVO MISTO
+DigitalOut DrugoZauzeto(PC_0); //DRUGO MISTO
+
+void Control_1()
+{
+    char prvi[2];    //Polje prvog senzora
+    char drugi[2];   //Polje drugog senzora
+    prvi[0] = 0x09;  //Adresa "Control 1 Register"
+    //Naredba -> Continuous mode, OTD 10Hz, +/- 2Gauss, 512 OVR
+    prvi[1] = 0x01; // <- Naredba
+    PPM.write(ADRESA_SENZOR << 1, prvi, 2, false);
+    drugi[0] = prvi[0];
+    drugi[1] = prvi[1];
+    DPM.write(ADRESA_SENZOR << 1, drugi, 2, false);
+}
+
+void Control_2()
+{
+    char prvi[2];
+    char drugi[2];
+    prvi[0] = 0x09;  //Adresa "Control 2 Register"
+    //Naredba -> Interrupt pin disabled, Pointer roll-over disabeled, Soft Reset disabled
+    prvi[1] = 0x41; // <- Naredba
+    PPM.write(ADRESA_SENZOR << 1, prvi, 2, false);
+    drugi[0] = prvi[0];
+    drugi[1] = prvi[1];
+    DPM.write(ADRESA_SENZOR << 1, drugi, 2, false);
+}
+
+void ReSet()
+{
+    char prvi[2];
+    char drugi[2];
+    prvi[0] = 0x0B; //Adresa "Reset/Set Period Register"
+    drugi[0] = prvi[0];
+    prvi[1] = 0x01; //Naredba -> preporuka datasheet-a je 0x01(bez objašnjenja)
+    PPM.write(ADRESA_SENZOR << 1, prvi, 2, false);
+    drugi[1] = prvi[1];
+    DPM.write(ADRESA_SENZOR << 1, drugi, 2, false);
+}
+
+/*short getX()
+{
+    char data_in;
+    char data_out[2];
+    short x,lsb;
+    data_in = 0x00; //x-os LSB
+    senzor.write(ADDRESS << 1, &data_in, 1, true);
+    senzor.read(ADDRESS << 1, data_out, 2, false);
+    lsb = data_out[0];
+    x = (data_out[1] << 8) | lsb;
+    return x;
+}
+
+short getY()
+{
+    char data_in;
+    char data_out[2];
+    short y,lsb;
+    data_in = 0x02; //y-os LSB
+    senzor.write(ADDRESS << 1, &data_in, 1, true);
+    senzor.read(ADDRESS << 1, data_out, 2, false);
+    lsb = data_out[0];
+    y = (data_out[1] << 8) | lsb;
+    return y;
+}
+
+short getZ()
+{
+    char data_in;
+    char data_out[2];
+    short z,lsb;
+    data_in = 0x04; //z-os LSB
+    senzor.write(ADDRESS << 1, &data_in, 1, true);
+    senzor.read(ADDRESS << 1, data_out, 2, false);
+    lsb = data_out[0];
+    z = (data_out[1] << 8) | lsb;
+    return z;
+}*/
+
+void Prvi_getXYZ(short *PP)
+{
+    char podatak[6];
+    podatak[0] = 0x00; //Adresa registra LSB od x-osi
+    PPM.write(ADRESA_SENZOR << 1, &podatak[0], 1, true);
+    PPM.read(ADRESA_SENZOR << 1, podatak, 6, false);
+    //Prvo čita LSB, pa MSB vrijesnot x/y/z
+    PP[0] = ((short) podatak[1] << 8) | podatak[0]; //x-os
+    PP[1] = ((short) podatak[3] << 8) | podatak[2]; //y-os
+    PP[2] = ((short) podatak[5] << 8) | podatak[4]; //z-os
+}
+
+void Drugi_getXYZ(short *DP)
+{
+    char podatak[6];
+    podatak[0] = 0x00; //Adresa registra LSB od x-osi
+    DPM.write(ADRESA_SENZOR << 1, &podatak[0], 1, true);
+    DPM.read(ADRESA_SENZOR << 1, podatak, 6, false);
+    //Prvo čita LSB, pa MSB vrijesnot x/y/z
+    DP[0] = ((short) podatak[1] << 8) | podatak[0]; //x-os
+    DP[1] = ((short) podatak[3] << 8) | podatak[2]; //y-os
+    DP[2] = ((short) podatak[5] << 8) | podatak[4]; //z-os
+}
+/*
+void SlobodnoZauzeto( {
+    int PrvaFormula, DrugaFormula;
+    int PrviKvadrat, DrugiKvadrat;
+
+
+    PrvaForumla = sqrt(pow(PP[0],2)+pow(PP[1],2)+pow(PP[2],2));
+    DrugaForumla = sqrt(pow(DP[0],2)+pow(DP[1],2)+pow(DP[2],2));
+    if(PrvaForumla > 10000 && DrugaFormula > 10000)
+    {
+        PrvoZauzeto = 1;
+        DrugoZauzeto = 1;
+    } else if(PrvaFormula > 10000 && DrugaFormula < 10000)
+    {
+        PrvoZauzeto = 1;
+        DrugoZauzeto = 0;
+    } else if(PrvaFormula < 10000 && DrugaFormula > 10000)
+    {
+        PrvoZauzeto = 0;
+        DrugoZauzeto = 1;
+    } else
+    {
+        PrvoZauzeto = 0;
+        DrugoZauzeto = 0;
+    }
+}
+*/
+
+int main()
+{
+    double X,Y,Z;
+    double PrvaFormula, DrugaFormula;
+    short PP[3]= {0,0,0};
+    short DP[3]= {0,0,0};
+    PPM.frequency(100000);
+    DPM.frequency(100000);
+    Control_1();
+    wait_us(100);
+    Control_2();
+    wait_us(100);
+    ReSet();
+    while(1) {
+        wait_us(1);
+        /*X = getX();
+        Y = getY();
+        Z = getZ();
+        pc.printf("x %d, y %d, z %d \n", X, Y, Z);*/
+        Prvi_getXYZ(PP);
+        Drugi_getXYZ(DP);
+        /*pc.printf("x1 %hi, y1 %hi, z1 %hi \n",PrviParking[0],PrviParking[1],PrviParking[2]);
+        pc.printf("x2 %hi, y2 %hi, z2 %hi \n",DrugiParking[0],DrugiParking[1],DrugiParking[2]);*/
+        PrvaFormula = sqrt(pow((double)PP[0],2)+pow((double)PP[1],2)+pow((double)PP[0],2));
+        DrugaFormula = sqrt(pow((double)DP[0],2)+pow((double)DP[1],2)+pow((double)DP[0],2));
+        pc.printf("pf %lf df %lf\n",PrvaFormula,DrugaFormula);
+        if(PrvaFormula > GRANICA && DrugaFormula > GRANICA) {
+            PrvoZauzeto = 1;
+            DrugoZauzeto = 1;
+        } else if(PrvaFormula > GRANICA && DrugaFormula < GRANICA) {
+            PrvoZauzeto = 1;
+            DrugoZauzeto = 0;
+        } else if(PrvaFormula < GRANICA && DrugaFormula > GRANICA) {
+            PrvoZauzeto = 0;
+            DrugoZauzeto = 1;
+        } else {
+            PrvoZauzeto = 0;
+            DrugoZauzeto = 0;
+        }
+        wait(5);
+    }
+}
